@@ -4,8 +4,8 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 # --------------------------------------------------------
-# Continual MAE pre-training script
-# Based on main_pretrain.py but adapted for continual learning
+# Continual MAE pre-training script for Places365
+# Based on continual_pretrain.py but adapted for Places365 dataset
 # --------------------------------------------------------
 import argparse
 import datetime
@@ -22,6 +22,7 @@ import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
+from torchvision.datasets import Places365
 
 import timm
 assert timm.__version__ == "0.3.2"  # version check
@@ -33,7 +34,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 from util.lr_sched import adjust_learning_rate
-from engine_pretrain import train_one_epoch
 
 from continual import (
     continual_mae_vit_base_patch16,
@@ -43,7 +43,7 @@ from continual import (
 
 
 def get_args_parser():
-    parser = argparse.ArgumentParser('Continual MAE pre-training', add_help=False)
+    parser = argparse.ArgumentParser('Continual MAE pre-training on Places365', add_help=False)
     parser.add_argument('--batch_size', default=64, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
     parser.add_argument('--epochs', default=100, type=int,
@@ -52,7 +52,7 @@ def get_args_parser():
                         help='Accumulate gradient iterations (for increasing the effective batch size under memory constraints)')
 
     # Model parameters
-    parser.add_argument('--model', default='continual_mae_vit_large_patch16', type=str, metavar='MODEL',
+    parser.add_argument('--model', default='continual_mae_vit_base_patch16', type=str, metavar='MODEL',
                         help='Name of continual model to train')
 
     parser.add_argument('--input_size', default=224, type=int,
@@ -89,15 +89,22 @@ def get_args_parser():
     parser.add_argument('--warmup_epochs', type=int, default=10, metavar='N',
                         help='epochs to warmup LR (default lower for continual learning)')
 
-    # Dataset parameters
-    parser.add_argument('--data_path', default='/datasets01/imagenet_full_size/061417/', type=str,
-                        help='dataset path')
+    # Dataset parameters - Places365 specific
+    parser.add_argument('--data_path', default='/Users/coenvandenelsen/Library/CloudStorage/OneDrive-Kampany/Documenten/AI projects/Daan/improving_mae/data/places365', type=str,
+                        help='Places365 dataset path')
+    
+    parser.add_argument('--places_small', action='store_true',
+                        help='Use Places365 small version (256x256) instead of standard')
+    parser.set_defaults(places_small=True)
+    
+    parser.add_argument('--places_split', default='val', choices=['train-standard', 'train-challenge', 'val'],
+                        help='Places365 split to use for training')
 
-    parser.add_argument('--output_dir', default='./continual_output',
+    parser.add_argument('--output_dir', default='./continual_output_places365',
                         help='path where to save, empty for no saving')
-    parser.add_argument('--log_dir', default='./continual_output',
+    parser.add_argument('--log_dir', default='./continual_output_places365',
                         help='path where to tensorboard log')
-    parser.add_argument('--device', default='cuda',
+    parser.add_argument('--device', default='cpu',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--resume', default='',
@@ -227,6 +234,41 @@ def apply_freezing_strategy(model, freeze_mode):
     model.print_param_status()
 
 
+def create_places365_dataset(data_path, split, small, input_size):
+    """Create Places365 dataset with appropriate transforms"""
+    
+    # Data augmentation and normalization for training
+    transform_train = transforms.Compose([
+        transforms.RandomResizedCrop(input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+    
+    print(f"Loading Places365 dataset from {data_path}")
+    print(f"Split: {split}, Small: {small}")
+    
+    try:
+        dataset = Places365(
+            root=data_path,
+            split=split,
+            small=small,
+            download=False,  # Assume dataset is already downloaded
+            transform=transform_train
+        )
+        
+        print(f"✓ Places365 dataset loaded successfully!")
+        print(f"Dataset size: {len(dataset)}")
+        print(f"Number of classes: {len(dataset.classes)}")
+        
+        return dataset
+        
+    except Exception as e:
+        print(f"✗ Error loading Places365 dataset: {e}")
+        print("Make sure the dataset is downloaded and the path is correct")
+        sys.exit(1)
+
+
 def main(args):
     misc.init_distributed_mode(args)
 
@@ -242,14 +284,13 @@ def main(args):
 
     cudnn.benchmark = True
 
-    # simple augmentation
-    transform_train = transforms.Compose([
-            transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
-    dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
-    print(dataset_train)
+    # Create Places365 dataset
+    dataset_train = create_places365_dataset(
+        data_path=args.data_path,
+        split=args.places_split,
+        small=args.places_small,
+        input_size=args.input_size
+    )
 
     if True:  # args.distributed:
         num_tasks = misc.get_world_size()
@@ -322,7 +363,7 @@ def main(args):
 
     misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
-    print(f"Start continual training for {args.epochs} epochs")
+    print(f"Start continual training on Places365 for {args.epochs} epochs")
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:

@@ -219,13 +219,13 @@ def continual_mae_vit_huge_patch14(**kwargs):
     return model
 
 
-# Example usage and testing
-if __name__ == "__main__":
+def main():
     print("Continual MAE Test")
     print("=" * 50)
     
     # Create model
-    model = continual_mae_vit_large_patch16()
+    # model = continual_mae_vit_large_patch16()
+    model = continual_mae_vit_base_patch16()
     
     # Print initial status
     model.print_param_status()
@@ -250,3 +250,6 @@ if __name__ == "__main__":
     print(f"Masked-only loss: {loss_masked.item():.4f}")
     
     print("\nContinual MAE ready for use!") 
+
+if __name__ == "__main__":
+    main()

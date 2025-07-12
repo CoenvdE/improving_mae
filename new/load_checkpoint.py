@@ -16,7 +16,7 @@ import models_mae
 import models_vit
 
 
-def prepare_model(chkpt_dir, arch='mae_vit_large_patch16'):
+def prepare_model(chkpt_dir, arch='mae_vit_base_patch16'):
     """
     Load MAE model from checkpoint.
     
@@ -105,7 +105,7 @@ def main():
     print("=" * 40)
     
     # Path to checkpoint
-    checkpoint_path = '/Users/coenvandenelsen/Library/CloudStorage/OneDrive-Kampany/Documenten/AI projects/Daan/improving_mae/demo/mae_visualize_vit_large.pth'
+    checkpoint_path = '/Users/coenvandenelsen/Library/CloudStorage/OneDrive-Kampany/Documenten/AI projects/Daan/improving_mae/demo/mae_pretrain_vit_base.pth'
     
     # Check if checkpoint exists
     if not os.path.exists(checkpoint_path):
@@ -115,7 +115,7 @@ def main():
     try:
         # Load MAE model
         print("\n1. Loading MAE model for reconstruction...")
-        mae_model = prepare_model(checkpoint_path, 'mae_vit_large_patch16')
+        mae_model = prepare_model(checkpoint_path, 'mae_vit_base_patch16')
         test_model(mae_model, 'mae')
         
         print("\n" + "=" * 40)
